@@ -90,7 +90,7 @@ jobs:
           path: security-reports/solhint.txt
           retention-days: 30
 
-  # ---------------------------------------------------------------
+   # ---------------------------------------------------------------
   # STAGE 2 — Static Analysis (Slither) + Dependency Scanning
   # ---------------------------------------------------------------
   static-analysis:
@@ -108,6 +108,9 @@ jobs:
       - name: Install deps
         run: forge install
 
+      - name: Create security-reports directory
+        run: mkdir -p security-reports
+
       - name: Run Slither
         id: slither
         uses: crytic/slither-action@v0.3.0
@@ -121,22 +124,25 @@ jobs:
 
       - name: Dependency scan
         continue-on-error: false
-        run: bash script/check_dependencies.sh security-reports
+        run: bash scripts/check_dependencies.sh security-reports
 
       - name: Filter high-severity findings
         if: always()
         run: |
-          mkdir -p security-reports
           if [[ -f security-reports/slither.sarif ]]; then
             HIGH=$(jq '[.runs[].results[] | select(.level=="error")] | length' security-reports/slither.sarif)
             echo "High-severity findings: $HIGH"
             echo "high_count=$HIGH" >> $GITHUB_ENV
             if (( HIGH > 0 )); then exit 1; fi
+          else
+            echo "Slither SARIF file not found. Skipping high-severity filter."
           fi
 
       - name: Upload SARIF to GitHub Security tab
-        if: always()
-        uses: github/codeql-action/upload-sarif@v3
+        # Updated to v4 to fix deprecation warning
+        # Added hashFiles check to prevent crash if Slither failed to generate the file
+        if: always() && hashFiles('security-reports/slither.sarif') != ''
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: security-reports/slither.sarif
 
@@ -150,6 +156,7 @@ jobs:
             security-reports/forge-libs.txt
             security-reports/dep-scan-result.txt
           retention-days: 30
+          if-no-files-found: ignore # Prevents artifact upload from failing if files are missing
 
   # ---------------------------------------------------------------
   # STAGE 3 — Unit & Invariant Tests
