@@ -308,7 +308,7 @@ jobs:
           TOKEN_NAME: ${{ secrets.TOKEN_NAME }}
           TOKEN_SYMBOL: ${{ secrets.TOKEN_SYMBOL }}
         run: |
-          forge script scripts/deploy/Deploy.s.sol:DeployScript \
+          forge script script/deploy/Deploy.s.sol:DeployScript \
             --rpc-url "$RPC_URL" \
             --private-key "$DEPLOYER_KEY" \
             --broadcast --verify \
