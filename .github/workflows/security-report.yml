@@ -26,7 +26,7 @@ jobs:
           github-token: ${{ secrets.VCS_TOKEN }}
 
       - name: Display structure of downloaded artifacts
-        run: ls -R all-reports
+        run: ls -R all-reports || true
 
       - name: Build Summary Markdown
         run: |
