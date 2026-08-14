@@ -3,11 +3,12 @@ pragma solidity ^0.8.0;
 
 import {ERC721} from "@openzeppelin/contracts@4.4.2/token/ERC721/ERC721.sol";
 import {Ownable} from "@openzeppelin/contracts@4.4.2/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts@4.4.2/security/ReentrancyGuard.sol";
 
 /// @title ArtToken Contract
 /// @author Your Name
 /// @notice A simple NFT contract for creating artwork tokens
-contract ArtToken is ERC721, Ownable {
+contract ArtToken is ERC721, Ownable, ReentrancyGuard {
     // ============================================
     // Type Declarations
     // ============================================
@@ -49,6 +50,7 @@ contract ArtToken is ERC721, Ownable {
     // ============================================
     error InsufficientFee(uint256 sent, uint256 required);
     error NotOwner();
+    error WithdrawFailed();
 
     // ============================================
     // Constructor
@@ -70,9 +72,13 @@ contract ArtToken is ERC721, Ownable {
     }
 
     /// @notice Extraction of ethers from the Smart Contract to the Owner
-    function withdraw() external payable onlyOwner {
+    function withdraw() external onlyOwner nonReentrant {
+        uint256 balance = address(this).balance;
         address payable _owner = payable(owner());
-        _owner.transfer(address(this).balance);
+
+        // Using .call instead of .transfer to prevent gas limit issues with multisig wallets
+        (bool success,) = _owner.call{value: balance}("");
+        if (!success) revert WithdrawFailed();
     }
 
     // ============================================
@@ -81,7 +87,7 @@ contract ArtToken is ERC721, Ownable {
 
     /// @notice NFT Token Payment
     /// @param _name Name of the artwork
-    function createRandomArtWork(string memory _name) public payable {
+    function createRandomArtWork(string memory _name) public payable nonReentrant {
         if (msg.value < fee) revert InsufficientFee(msg.value, fee);
         _createArtWork(_name);
     }
@@ -111,6 +117,7 @@ contract ArtToken is ERC721, Ownable {
     function getOwnerArtWork(address _owner) public view returns (Art[] memory) {
         Art[] memory result = new Art[](balanceOf(_owner));
         uint256 counterOwner = 0;
+        // slither-disable-next-line calls-loop
         for (uint256 i = 0; i < artWorks.length; ++i) {
             if (ownerOf(i) == _owner) {
                 result[counterOwner] = artWorks[i];
@@ -129,18 +136,25 @@ contract ArtToken is ERC721, Ownable {
     function _createArtWork(string memory _name) internal {
         uint8 randRarity = uint8(_createRandomNum(1000));
         uint256 randDna = _createRandomNum(10 ** 16);
-        Art memory newArtWork = Art(_name, counter, randDna, 1, randRarity);
+
+        uint256 tokenId = counter;
+        Art memory newArtWork = Art(_name, tokenId, randDna, 1, randRarity);
         artWorks.push(newArtWork);
-        _safeMint(msg.sender, counter);
-        emit NewArtWork(msg.sender, counter, randDna);
+
+        // EFFECT: Increment counter BEFORE minting (Checks-Effects-Interactions pattern)
         ++counter;
+
+        // INTERACTION: Safe mint last
+        _safeMint(msg.sender, tokenId);
+        emit NewArtWork(msg.sender, tokenId, randDna);
     }
 
     /// @notice Creation of a random number (required for NFT token properties)
     /// @param _mod Modulo for the random number
     function _createRandomNum(uint256 _mod) internal view returns (uint256) {
-        // solhint-disable-next-line not-rely-on-time
-        bytes32 hasRandomNum = keccak256(abi.encodePacked(block.timestamp, msg.sender));
+        // slither-disable-next-line timestamp
+        // Using prevrandao instead of timestamp for slightly better pseudo-randomness
+        bytes32 hasRandomNum = keccak256(abi.encodePacked(block.prevrandao, msg.sender));
         uint256 randomNum = uint256(hasRandomNum);
         return randomNum % _mod;
     }
