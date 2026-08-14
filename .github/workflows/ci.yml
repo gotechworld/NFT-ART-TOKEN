@@ -305,6 +305,8 @@ jobs:
         env:
           DEPLOYER_KEY: ${{ secrets.SEPOLIA_DEPLOYER_KEY }}
           RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+          TOKEN_NAME: ${{ secrets.TOKEN_NAME }}
+          TOKEN_SYMBOL: ${{ secrets.TOKEN_SYMBOL }}
         run: |
           forge script scripts/deploy/Deploy.s.sol:DeployScript \
             --rpc-url "$RPC_URL" \

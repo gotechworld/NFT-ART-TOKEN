@@ -11,8 +11,8 @@ contract DeployScript is Script {
             revert("Wrong network: Only Sepolia (11155111) is supported");
         }
 
-        uint256 key = vm.envUint("SEPOLIA_DEPLOYER_KEY");
-        vm.startBroadcast(key);
+        // Start broadcasting using the --private-key flag passed in the CLI
+        vm.startBroadcast();
 
         string memory name = vm.envString("TOKEN_NAME");
         string memory symbol = vm.envString("TOKEN_SYMBOL");
