@@ -311,9 +311,10 @@ jobs:
           forge script script/deploy/Deploy.s.sol:DeployScript \
             --rpc-url "$RPC_URL" \
             --private-key "$DEPLOYER_KEY" \
-            --broadcast --verify \
-            --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }} \
-            --verifier-url "https://api-sepolia.etherscan.io/api"
+            --broadcast \
+            --verify \
+            --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }} 
+          
 
       - name: Save deployment record
         run: |
