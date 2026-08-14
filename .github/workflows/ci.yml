@@ -1,0 +1,374 @@
+name: Smart Contract CI (Sepolia)
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  security-events: write   # for SARIF upload to GitHub Security tab
+  pull-requests: write
+
+env:
+  FOUNDRY_PROFILE: ci
+  FOUNDRY_VERSION: nightly
+  COVERAGE_THRESHOLD: "80"
+
+jobs:
+  # ---------------------------------------------------------------
+  # STAGE 1 — Lint and Format
+  # ---------------------------------------------------------------
+  lint:
+    name: "1 · Lint & Format"
+    runs-on: ubuntu-latest
+    outputs:
+      override_warnings: ${{ steps.override.outputs.override }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Install deps
+        run: forge install
+
+      - name: Forge format check
+        run: forge fmt --check
+
+      - name: Install Solhint
+        run: npm install -g solhint@latest
+
+      - name: Run Solhint
+        continue-on-error: true
+        id: solhint
+        run: |
+          mkdir -p security-reports
+          solhint 'src/**/*.sol' --config .solhint.json \
+            --formatter unix | tee security-reports/solhint.txt || true
+          # Count errors (severity = error -> fail)
+          if grep -E ': error$|: error ' security-reports/solhint.txt; then
+            echo "solhint_failed=true" >> $GITHUB_OUTPUT
+          fi
+          # Warnings
+          if grep -E ': warning ' security-reports/solhint.txt; then
+            echo "solhint_warnings=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Detect explicit override
+        id: override
+        run: |
+          OVERRIDE=false
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'override-warnings') }}" == "true" ]]; then OVERRIDE=true; fi
+          if git log -1 --pretty=%B | grep -qi "^Allow-Warnings: true$"; then OVERRIDE=true; fi
+          echo "override=$OVERRIDE" >> $GITHUB_OUTPUT
+
+      - name: Fail on errors
+        if: steps.solhint.outputs.solhint_failed == 'true'
+        run: exit 1
+
+      - name: Fail on warnings (unless override)
+        if: steps.solhint.outputs.solhint_warnings == 'true' && steps.override.outputs.override != 'true'
+        run: |
+          echo "❌ Solhint warnings present. Apply label 'override-warnings' or add commit trailer 'Allow-Warnings: true'."
+          exit 1
+
+      - name: Upload Solhint report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: solhint-report
+          path: security-reports/solhint.txt
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # STAGE 2 — Static Analysis (Slither) + Dependency Scanning
+  # ---------------------------------------------------------------
+  static-analysis:
+    name: "2 · Static Analysis & Dependency Scan"
+    runs-on: ubuntu-latest
+    needs: lint
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Install deps
+        run: forge install
+
+      - name: Run Slither
+        id: slither
+        uses: crytic/slither-action@v0.3.0
+        with:
+          target: "src"
+          solc-remaps: "@openzeppelin/contracts@4.4.2/=lib/openzeppelin-contracts/contracts/"
+          fail-on: high
+          sarif: security-reports/slither.sarif
+          slither-config: slither.config.json
+          ignore-compile: false
+
+      - name: Dependency scan
+        continue-on-error: false
+        run: bash script/check_dependencies.sh security-reports
+
+      - name: Filter high-severity findings
+        if: always()
+        run: |
+          mkdir -p security-reports
+          if [[ -f security-reports/slither.sarif ]]; then
+            HIGH=$(jq '[.runs[].results[] | select(.level=="error")] | length' security-reports/slither.sarif)
+            echo "High-severity findings: $HIGH"
+            echo "high_count=$HIGH" >> $GITHUB_ENV
+            if (( HIGH > 0 )); then exit 1; fi
+          fi
+
+      - name: Upload SARIF to GitHub Security tab
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: security-reports/slither.sarif
+
+      - name: Upload Slither & dependency report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: static-analysis-report
+          path: |
+            security-reports/slither.sarif
+            security-reports/forge-libs.txt
+            security-reports/dep-scan-result.txt
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # STAGE 3 — Unit & Invariant Tests
+  # ---------------------------------------------------------------
+  unit-and-invariant:
+    name: "3 · Unit & Invariant Tests"
+    runs-on: ubuntu-latest
+    needs: static-analysis
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Install deps
+        run: forge install
+
+      - name: Build
+        run: forge build
+
+      - name: Unit tests
+        run: |
+          forge test --match-test "test" --exclude-match-test "testFuzz|invariant" -vvv \
+            --json > security-reports/unit-tests.json || true
+          forge test --match-test "test" --exclude-match-test "testFuzz|invariant" -vvv
+        env:
+          FOUNDRY_PROFILE: ci
+
+      - name: Invariant tests
+        run: |
+          forge test --match-test "invariant" -vvv --json > security-reports/invariant-tests.json || true
+          forge test --match-test "invariant" -vvv
+        env:
+          FOUNDRY_PROFILE: ci
+
+      - name: Upload test report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-invariant-report
+          path: security-reports/*.json
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # STAGE 4 — Fuzz Tests + Coverage Gate
+  # ---------------------------------------------------------------
+  fuzz-and-coverage:
+    name: "4 · Fuzz Tests & Coverage Gate"
+    runs-on: ubuntu-latest
+    needs: unit-and-invariant
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Install deps
+        run: forge install
+
+      - name: Install lcov + bc
+        run: sudo apt-get update && sudo apt-get install -y lcov bc jq
+
+      - name: Run fuzz tests
+        run: |
+          forge test --match-test "testFuzz" -vvv --json > security-reports/fuzz-tests.json || true
+          forge test --match-test "testFuzz" -vvv
+        env:
+          FOUNDRY_PROFILE: ci
+
+      - name: Run coverage + threshold gate
+        run: bash script/check_coverage_threshold.sh "$COVERAGE_THRESHOLD" security-reports
+
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: |
+            security-reports/coverage.txt
+            security-reports/lcov.info
+            security-reports/html/
+          retention-days: 30
+
+  # ---------------------------------------------------------------
+  # STAGE 5 — Manual Review Gate
+  # ---------------------------------------------------------------
+  manual-gate:
+    name: "5 · Manual Audit Gate"
+    runs-on: ubuntu-latest
+    needs: fuzz-and-coverage
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: sepolia-audit-approval
+      # Requires required reviewers configured in GitHub Environment settings.
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify audit checklist is committed
+        run: |
+          if [[ ! -f .github/AUDIT_CHECKLIST.md ]]; then
+            echo "AUDIT_CHECKLIST.md missing"; exit 1
+          fi
+          # Verify the checklist has at least one unchecked & one checked item
+          grep -q '\[ \]' .github/AUDIT_CHECKLIST.md
+          grep -q '\[x\]' .github/AUDIT_CHECKLIST.md
+
+      - name: Approve deployment
+        run: |
+          echo "✅ Manual audit gate passed for commit ${{ github.sha }}."
+          echo "Reviewer: ${{ github.actor }}"
+
+      - name: Upload signed-off checklist
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-checklist-signed
+          path: .github/AUDIT_CHECKLIST.md
+          retention-days: 365
+
+  # ---------------------------------------------------------------
+  # STAGE 6 — Deployment (gated by Stage 5)
+  # ---------------------------------------------------------------
+  deploy:
+    name: "6 · Deployment to Sepolia"
+    runs-on: ubuntu-latest
+    needs: manual-gate
+    if: github.ref == 'refs/heads/main'
+    environment:
+      name: sepolia
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: ${{ env.FOUNDRY_VERSION }}
+
+      - name: Install deps
+        run: forge install
+
+      - name: Build
+        run: forge build
+
+      - name: Deploy via forge script to Sepolia
+        env:
+          DEPLOYER_KEY: ${{ secrets.SEPOLIA_DEPLOYER_KEY }}
+          RPC_URL: ${{ secrets.SEPOLIA_RPC_URL }}
+        run: |
+          forge script scripts/deploy/Deploy.s.sol:DeployScript \
+            --rpc-url "$RPC_URL" \
+            --private-key "$DEPLOYER_KEY" \
+            --broadcast --verify \
+            --etherscan-api-key ${{ secrets.ETHERSCAN_API_KEY }} \
+            --verifier-url "https://api-sepolia.etherscan.io/api"
+
+      - name: Save deployment record
+        run: |
+          mkdir -p security-reports
+          {
+            echo "# Deployment Record (Sepolia Testnet)"
+            echo "- Commit: ${{ github.sha }}"
+            echo "- Deployer: ${{ github.actor }}"
+            echo "- Network: sepolia"
+            echo "- Time: $(date -u)"
+            echo "- Contract address: see broadcast output above"
+          } > security-reports/deployment-record.md
+
+      - name: Upload deployment record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-record
+          path: security-reports/deployment-record.md
+          retention-days: 3650
+
+  # ---------------------------------------------------------------
+  # Aggregate Security Report (per build)
+  # ---------------------------------------------------------------
+  security-report-aggregate:
+    name: "Aggregated Security Report"
+    runs-on: ubuntu-latest
+    needs: [lint, static-analysis, unit-and-invariant, fuzz-and-coverage]
+    if: always()
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports
+
+      - name: Build summary
+        run: |
+          mkdir -p security-summary
+          {
+            echo "# Security Report — build ${{ github.run_id }}"
+            echo ""
+            echo "- Repo: ${{ github.repository }}"
+            echo "- Ref:  ${{ github.ref }}"
+            echo "- SHA:  ${{ github.sha }}"
+            echo "- Triggered by: ${{ github.actor }}"
+            echo ""
+            echo "## Stage results"
+            echo "| Stage | Status |"
+            echo "|-------|--------|"
+            echo "| Lint | ${{ needs.lint.result }} |"
+            echo "| Static Analysis | ${{ needs.static-analysis.result }} |"
+            echo "| Unit/Invariant | ${{ needs.unit-and-invariant.result }} |"
+            echo "| Fuzz/Coverage | ${{ needs.fuzz-and-coverage.result }} |"
+          } > security-summary/SECURITY_REPORT.md
+
+      - name: Upload aggregated report
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-report-build-${{ github.run_id }}
+          path: |
+            all-reports/**
+            security-summary/SECURITY_REPORT.md
+          retention-days: 90
