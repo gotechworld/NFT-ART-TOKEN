@@ -23,7 +23,7 @@ jobs:
         with:
           path: all-reports
           run-id: ${{ github.event.workflow_run.id }}
-          github-token: ${{ secrets.VCS_TOKEN }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Display structure of downloaded artifacts
         run: ls -R all-reports || true
@@ -65,7 +65,7 @@ jobs:
         run: |
           mkdir -p security-summary
           
-          # Define variables safely to avoid sed breaking
+          # Define variables safely
           STATUS="${{ github.event.workflow_run.conclusion }}"
           if [ "$STATUS" == "success" ]; then
             STATUS_COLOR="#28a745" # Green
@@ -230,16 +230,6 @@ jobs:
           </body>
           </html>
           EOF
-          
-          # Replace the dynamic bash variables inside the generated HTML
-          sed -i 's/${STATUS_TEXT}/'"$STATUS_TEXT"'/g' security-summary/index.html
-          sed -i 's/${STATUS_COLOR}/'"$STATUS_COLOR"'/g' security-summary/index.html
-          sed -i 's/${ARTIFACT_HTML}/'"$(echo "$ARTIFACT_HTML" | sed -e 's/[\/&]/\\&/g')"'/' security-summary/index.html
-          sed -i 's/${{ github.repository }}/${{ github.repository }}/g' security-summary/index.html
-          sed -i 's/${{ github.event.workflow_run.head_branch }}/${{ github.event.workflow_run.head_branch }}/g' security-summary/index.html
-          sed -i 's/${{ github.event.workflow_run.head_sha }}/${{ github.event.workflow_run.head_sha }}/g' security-summary/index.html
-          sed -i 's/${{ github.actor }}/${{ github.actor }}/g' security-summary/index.html
-          sed -i 's/${{ github.event.workflow_run.id }}/${{ github.event.workflow_run.id }}/g' security-summary/index.html
 
       - name: Upload consolidated report artifact
         uses: actions/upload-artifact@v4
