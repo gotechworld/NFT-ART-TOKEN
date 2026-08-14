@@ -174,11 +174,15 @@ jobs:
       - name: Build
         run: forge build
 
+      - name: Create security-reports directory
+        run: mkdir -p security-reports
+
       - name: Unit tests
         run: |
-          forge test --match-test "test" --exclude-match-test "testFuzz|invariant" -vvv \
+          # Updated --exclude-match-test to --no-match-test
+          forge test --match-test "test" --no-match-test "testFuzz|invariant" -vvv \
             --json > security-reports/unit-tests.json || true
-          forge test --match-test "test" --exclude-match-test "testFuzz|invariant" -vvv
+          forge test --match-test "test" --no-match-test "testFuzz|invariant" -vvv
         env:
           FOUNDRY_PROFILE: ci
 
@@ -196,6 +200,7 @@ jobs:
           name: unit-invariant-report
           path: security-reports/*.json
           retention-days: 30
+          if-no-files-found: ignore
 
   # ---------------------------------------------------------------
   # STAGE 4 — Fuzz Tests + Coverage Gate
