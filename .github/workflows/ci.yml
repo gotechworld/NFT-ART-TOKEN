@@ -133,7 +133,7 @@ jobs:
 
       - name: Dependency scan
         continue-on-error: false
-        run: bash scripts/check_dependencies.sh security-reports
+        run: bash script/check_dependencies.sh security-reports
 
       - name: Upload SARIF to GitHub Security tab
         if: always() && hashFiles('security-reports/slither.sarif') != ''
