@@ -1,0 +1,14 @@
+{
+  "filter_paths": "lib|test|scripts|node_modules",
+  "solc_remaps": [
+    "@openzeppelin/contracts@4.4.2/=lib/openzeppelin-contracts/contracts/"
+  ],
+  "detectors_to_run": "all",
+  "exclude_informational": false,
+  "exclude_low": false,
+  "exclude_medium": false,
+  "exclude_high": false,
+  "fail_on": "high",
+  "fail_on_low": false,
+  "fail_on_medium": false
+}

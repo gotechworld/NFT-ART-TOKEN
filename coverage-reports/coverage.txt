@@ -1,0 +1,52 @@
+Warning: optimizer settings and `viaIR` have been disabled for accurate coverage reports.
+If you encounter "stack too deep" errors, consider using `--ir-minimum` which enables `viaIR` with minimum optimization resolving most of the errors.
+See more: https://book.getfoundry.sh/guides/best-practices/stack-too-deep
+Compiling 34 files with Solc 0.8.19
+Solc 0.8.19 finished in 562.37ms
+Compiler run successful!
+Analysing contracts...
+Running tests...
+
+Ran 15 tests for test/ArtToken.t.sol:ArtTokenTest
+[PASS] testFuzz_CreateRandomArtWork(uint256) (runs: 1000, μ: 197355, ~: 197133)
+[PASS] testFuzz_MultipleMintsAndLevelUp(uint8) (runs: 1000, μ: 1840291, ~: 1000217)
+[PASS] test_CreateRandomArtWork() (gas: 201641)
+[PASS] test_Deployment() (gas: 28389)
+[PASS] test_GetOwnerArtWork() (gas: 497380)
+[PASS] test_InfoSmartContract() (gas: 188112)
+[PASS] test_LevelUp() (gas: 196019)
+[PASS] test_MultipleMintsIncrementCounter() (gas: 321134)
+[PASS] test_RevertIf_InsufficientFee() (gas: 22485)
+[PASS] test_RevertIf_NonOwnerLevelsUp() (gas: 190873)
+[PASS] test_RevertIf_NonOwnerUpdatesFee() (gas: 14276)
+[PASS] test_RevertIf_NonOwnerWithdraws() (gas: 192478)
+[PASS] test_TransferUpdatesOwnerArtWorkArray() (gas: 216173)
+[PASS] test_UpdateFee() (gas: 14454)
+[PASS] test_Withdraw() (gas: 200638)
+Suite result: ok. 15 passed; 0 failed; 0 skipped; finished in 76.10ms (167.75ms CPU time)
+
+Ran 1 test for test/ArtToken.invariants.t.sol:Invariants
+[PASS] invariant_totalSupplyConsistent() (runs: 256, calls: 3840, reverts: 0)
+
+╭----------+-----------+-------+---------+----------╮
+| Contract | Selector  | Calls | Reverts | Discards |
++===================================================+
+| Handler  | createArt | 3840  | 0       | 0        |
+╰----------+-----------+-------+---------+----------╯
+
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 410.23ms (409.58ms CPU time)
+
+Ran 2 test suites in 410.64ms (486.34ms CPU time): 16 tests passed, 0 failed, 0 skipped (16 total tests)
+
+╭--------------------------------+-----------------+-----------------+---------------+----------------╮
+| File                           | % Lines         | % Statements    | % Branches    | % Funcs        |
++=====================================================================================================+
+| script/deploy/Deploy.s.sol     | 0.00% (0/10)    | 0.00% (0/13)    | 0.00% (0/1)   | 0.00% (0/1)    |
+|--------------------------------+-----------------+-----------------+---------------+----------------|
+| src/ArtToken.sol               | 100.00% (38/38) | 100.00% (41/41) | 100.00% (3/3) | 100.00% (9/9)  |
+|--------------------------------+-----------------+-----------------+---------------+----------------|
+| test/ArtToken.invariants.t.sol | 83.33% (10/12)  | 88.89% (8/9)    | 100.00% (0/0) | 66.67% (2/3)   |
+|--------------------------------+-----------------+-----------------+---------------+----------------|
+| Total                          | 80.00% (48/60)  | 77.78% (49/63)  | 75.00% (3/4)  | 84.62% (11/13) |
+╰--------------------------------+-----------------+-----------------+---------------+----------------╯
+Wrote LCOV report.
