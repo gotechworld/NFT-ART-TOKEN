@@ -17,7 +17,7 @@ Before you begin, ensure you have the following installed on your machine:
 1. **Foundry (Forge, Cast, Anvil)**
 
 ```bash
-curl -L https://foundry.paradigm.xyz | bashfoundryup
+curl -L https://foundry.paradigm.xyz | bash foundryup | bash foundryup --update
 ```
 
 2. **Node.js & npm (for Solhint)**
