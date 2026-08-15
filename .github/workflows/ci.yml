@@ -17,7 +17,7 @@ permissions:
 
 env:
   FOUNDRY_PROFILE: ci
-  FOUNDRY_VERSION: nightly
+  FOUNDRY_VERSION: stable
   COVERAGE_THRESHOLD: "80"
 
 jobs:
@@ -45,6 +45,9 @@ jobs:
       - name: Forge format check
         run: forge fmt --check
 
+      - name: Forge format
+        run: forge fmt
+      
       - name: Install Solhint
         run: npm install -g solhint@latest
 
